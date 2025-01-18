@@ -189,7 +189,8 @@ if st.button("Generate"):
                     temperature=0.7
                 )
 
-                final_response = response.choices[0].message.content
+                final_response = response.choices[0].message.content.strip()
+                final_response = final_response.strip('"')  # Remove extra quotes if present
 
                 # Check if the response contains the confidentiality message
                 if final_response.strip() == CONFIDENTIALITY_MESSAGE.strip():
