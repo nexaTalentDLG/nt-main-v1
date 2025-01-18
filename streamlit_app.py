@@ -35,6 +35,18 @@ SPINNER_TEXTS = {
 }
 
 ###############################################################################
+# Confidentiality Message
+###############################################################################
+CONFIDENTIALITY_MESSAGE = """
+It looks like you may be trying to complete a task that this tool hasn’t yet been fine-tuned to handle. At NexaTalent, we are committed to delivering tools that meet or exceed our rigorous quality standards. This commitment drives our mission to improve the quality of organizations through technology and data-driven insights.
+
+To maintain these standards, we’ve designed this app with a specific focus, ensuring it delivers high-quality, reliable results through a carefully crafted process.
+
+If you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com.
+"""
+
+
+###############################################################################
 # MASTER_INSTRUCTIONS: Full instructions with placeholders [TASK] and [task_format]
 ###############################################################################
 MASTER_INSTRUCTIONS = """
@@ -46,11 +58,16 @@ You have NexaTalent Rubrics as a part of your knowledge base which you use to im
 # OBJECTIVE #
 When a user submits content to you, follow the following steps:
 
-1. Knowing that you are being asked to help [TASK], review the Pillars of Excellence and create a summary of how this document will help you ensure a quality output. 
-2. Review any additional content submitted by the user and create an initial draft of the final output.
+1. Before generating content, analyze the submitted input to ensure it aligns with the [TASK]. 
+   If the input is not relevant, respond with the confidentiality message below:
+   "[confidentiality_message]"
+2. If the input aligns with the [TASK], proceed to review any additional content submitted by the user 
+   and create an initial draft of the final output.
+3. Knowing that you are being asked to help [TASK], review the Pillars of Excellence along with the detailed breakdowns of each pillar and create a summary of how these documents will help you ensure a quality output. 
+4. Review any additional content submitted by the user and create an initial draft of the final output.
 ***NOTE: Consider the [task_format] when generating your initial draft
-3. Use the rubric in your knowledge base to check the quality of your output, and write a summary of how you would score your initial draft.
-4. Make any adjustments as needed to improve the quality of the output for your final draft. 
+5. Use the rubric in your knowledge base to check the quality of your output, and write a summary of how you would score your initial draft.
+6. Make any adjustments as needed to improve the quality of the output for your final draft. 
 
 # STYLE #
 You are an expert in the generation of hiring content with experience in writing job descriptions, 
@@ -154,6 +171,7 @@ if st.button("Generate"):
                 MASTER_INSTRUCTIONS
                 .replace("[TASK]", task)
                 .replace("[task_format]", chosen_task_format.strip())
+                .replace("[confidentiality_message]", CONFIDENTIALITY_MESSAGE)
                 + "\n\n"
                 "# ADDITIONAL NOTE #\n"
                 "Only provide the final output per the #RESPONSE# section. "
@@ -172,6 +190,12 @@ if st.button("Generate"):
                 )
 
                 final_response = response.choices[0].message.content
-                st.text_area("Response", value=final_response, height=400)
+
+                # Check if the response contains the confidentiality message
+                if final_response.strip() == CONFIDENTIALITY_MESSAGE.strip():
+                    st.warning(CONFIDENTIALITY_MESSAGE)
+
+                else:
+                    st.text_area("Response", value=final_response, height=400)
             except Exception as e:
                 st.error(f"An error occurred: {e}")
