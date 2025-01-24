@@ -35,6 +35,29 @@ SPINNER_TEXTS = {
 }
 
 ###############################################################################
+# Helper Functions for Input Analysis and Validation
+###############################################################################
+import re
+
+def summarize_input(user_input):
+    # Generate a brief summary of the user's input
+    summary = "Summary of input: " + re.sub(r'\s+', ' ', user_input[:250])  # Use the first 250 chars
+    return summary
+
+def validate_task_alignment(task, input_summary):
+    """
+    Compares the user input summary to the task and determines if they align.
+    Returns:
+        - is_aligned (bool): Whether the task and input align.
+        - justification (str): Explanation of why or why not.
+    """
+    if task.lower() in input_summary.lower():
+        return True, f"The user's input aligns with the selected task '{task}'."
+    else:
+        return False, f"The user's input does not align with the selected task '{task}'. Please review the input and try again."
+
+
+###############################################################################
 # Confidentiality Message
 ###############################################################################
 CONFIDENTIALITY_MESSAGE = """
@@ -58,16 +81,22 @@ You have NexaTalent Rubrics as a part of your knowledge base which you use to im
 # OBJECTIVE #
 When a user submits content to you, follow the following steps:
 
-1. Before generating content, analyze the submitted input to ensure it aligns with the [TASK]. 
-   If the input is not relevant, respond with the confidentiality message below:
+1. Before generating content, analyze the submitted input and generate a summary of what it is the user is attempting to do. == {user_summary}
+    ***NOTE: Rememeber the user is likely asking to complete a task that will help them with hiring. Consider this in the generation of {user_summary}
+2. Review your task,[TASK], and generate a summary of what this means you should be trying to do for the user. == {model_summary}
+3. Compare {user_summary} and {model_summary} to determine how similar these tasks are. Give me a brief summary of how similar these tasks are and score them 
+    from 0-5 where 0 is completely different tasks and 5 is the exact same. This score and justification == {model_judgement}
+    ***NOTE: Be sure to consider different ways [TASK] might be phrased when making this judgement. For example asking to "create" or expressing a "need" for 
+    interview questions would be the same as asking to "build" interview questions. 
+4. If {model_judgement} has a value less than or equal to 2, respond with the confidentiality message below:
    "[confidentiality_message]"
-2. If the input aligns with the [TASK], proceed to review any additional content submitted by the user 
+5. If {model_judgement} has a value greater than 2, proceed to review any additional content submitted by the user 
    and create an initial draft of the final output.
-3. Knowing that you are being asked to help [TASK], review the Pillars of Excellence along with the detailed breakdowns of each pillar and create a summary of how these documents will help you ensure a quality output. 
-4. Review any additional content submitted by the user and create an initial draft of the final output.
+6. Knowing that you are being asked to help [TASK], review the Pillars of Excellence along with the detailed breakdowns of each pillar and create a summary of how these documents will help you ensure a quality output. 
+7. Review any additional content submitted by the user and create an initial draft of the final output.
 ***NOTE: Consider the [task_format] when generating your initial draft
-5. Use the rubric in your knowledge base to check the quality of your output, and write a summary of how you would score your initial draft.
-6. Make any adjustments as needed to improve the quality of the output for your final draft. 
+8. Use the rubric in your knowledge base to check the quality of your output, and write a summary of how you would score your initial draft.
+9. Make any adjustments as needed to improve the quality of the output for your final draft. 
 
 # STYLE #
 You are an expert in the generation of hiring content with experience in writing job descriptions, 
@@ -83,6 +112,7 @@ Your tone should be educational and informative. Outputs should be concise and u
 Hiring team members and hiring managers
 
 # RESPONSE #
+{model_judgement}
 [task_format]
 """
 
@@ -102,10 +132,13 @@ Reference specific technologies/tools rather than general terms when possible.
     "Build Interview Questions": """
 Output should contain a set of unique situational interview questions with follow up questions based on provided interview competencies, 
 information provided, and NexaTalent Pillars of Excellence. Each question should be formatted as follows:
-[Competency being assessed]
-[Main question]
-[Follow up question 1] - bulleted under main
-[Follow up question 2] - bulleted under main
+
+EXAMPLE:
+**Experience with Club Channel Sales**
+Main Question: Can you describe a successful initiative you’ve led in the Club Channel space that delivered significant business growth? What was your role, and how did you measure success?
+- Follow-up 1: How did you address challenges during this initiative, especially regarding broker partner management?
+- Follow-up 2: What strategies did you use to ensure alignment across cross-functional teams?
+
 """,
     "Create response guides": """
 Output should contain a set of sample responses based on NexaTalent rubric in your knowledge base. 
@@ -185,18 +218,21 @@ if st.button("Generate"):
                         {"role": "system", "content": final_instructions},
                         {"role": "user", "content": f"USER NOTES:\n{user_notes}"}
                     ],
-                    ###max_tokens=1000,
                     temperature=0.7
                 )
 
+                # Extract the generated response
                 final_response = response.choices[0].message.content.strip()
-                final_response = final_response.strip('"')  # Remove extra quotes if present
 
-                # Check if the response contains the confidentiality message
-                if final_response.strip() == CONFIDENTIALITY_MESSAGE.strip():
-                    st.warning(CONFIDENTIALITY_MESSAGE)
-
+                # Find the first instance of "**" and strip everything before it
+                if "**" in final_response:
+                    clean_output = final_response.split("**", 1)[1]
+                    clean_output = "**" + clean_output  # Re-add the header
                 else:
-                    st.text_area("Response", value=final_response, height=400)
+                    clean_output = final_response  # Fallback to the full response if the header is not found
+
+                # Display the cleaned content to the user
+                st.text_area("Generated Content", value=clean_output.strip(), height=400)
+
             except Exception as e:
                 st.error(f"An error occurred: {e}")
