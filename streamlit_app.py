@@ -1,8 +1,11 @@
 import os
 import openai
 import streamlit as st
+import requests  # Added for sending HTTP requests to the webhook
+import json
 from io import StringIO
 from dotenv import load_dotenv
+import re
 
 # Load environment variables
 load_dotenv()
@@ -13,6 +16,29 @@ if not api_key:
     st.stop()
 
 openai.api_key = api_key
+
+###############################################################################
+# Google Script for Automatic Data Logging
+###############################################################################
+
+# Google Apps Script Webhook URL
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyOQgEFdFn1zB6te0ho-bWE6NSEpfoyfjAfIPufF1RAWsWmSqXEeAGeL3osEJpM1Yqz/exec"
+
+def log_to_google_sheets(tool_selection, user_input, generated_output):
+    """
+    Sends log data (tool selection, user input, and generated output) to Google Sheets via a webhook.
+    """
+    data = {
+        "tool_selection": tool_selection,
+        "user_input": user_input,
+        "generated_output": generated_output
+    }
+    try:
+        response = requests.post(WEBHOOK_URL, json=data)
+        return response.text
+    except Exception as e:
+        return f"Logging error: {e}"
+
 
 ###############################################################################
 # Mappings for dynamic assistant IDs
@@ -86,7 +112,6 @@ TASK_OVERVIEWS = {
 ###############################################################################
 # Helper Functions for Input Analysis and Validation
 ###############################################################################
-import re
 
 def summarize_input(user_input):
     # Generate a brief summary of the user's input
@@ -105,7 +130,6 @@ def validate_task_alignment(task, input_summary):
     else:
         return False, f"The user's input does not align with the selected task '{task}'. Please review the input and try again."
 
-
 ###############################################################################
 # Confidentiality Message
 ###############################################################################
@@ -116,7 +140,6 @@ To maintain these standards, we’ve designed this app with a specific focus, en
 
 If you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com.
 """
-
 
 ###############################################################################
 # MASTER_INSTRUCTIONS: Full instructions with placeholders [TASK] and [task_format]
@@ -170,7 +193,6 @@ Hiring team members and hiring managers
 >>{model_judgement}
 [task_format]
 """
-
 
 ###############################################################################
 # TASK_FORMAT_DEFINITIONS: Full text for each [task_format] based on selection
@@ -310,7 +332,6 @@ if st.button("Generate"):
                 "Do not include any chain-of-thought, steps, or internal reasoning."
             )
 
-
             try:
                 response = openai.chat.completions.create(
                     model="gpt-4o-mini",
@@ -321,10 +342,13 @@ if st.button("Generate"):
                     temperature=0.7
                 )
 
-                # Extract the generated response
+                # Extract the full generated response (which includes the rationale text)
                 final_response = response.choices[0].message.content.strip()
 
-                # Parse {model_judgement} value from the response
+                # Log the tool selection, user input, and full generated output (including rationale text)
+                log_to_google_sheets(task, user_notes, final_response)
+
+                # Parse {model_judgement} value from the full response
                 model_judgement_value = None
                 if "{model_judgement}" in final_response:
                     try:
@@ -334,18 +358,17 @@ if st.button("Generate"):
                         st.error("Unable to parse {model_judgement} value as an integer.")
                         st.stop()
 
-                # Check if {model_judgement} is less than or equal to 2
+                # If the judgement value is less than or equal to 2, display confidentiality message as a warning.
                 if model_judgement_value is not None and model_judgement_value <= 2:
                     st.warning(CONFIDENTIALITY_MESSAGE)
                 else:
-                    # Strip everything before the first relevant header for valid content
+                    # For display purposes, remove the rationale text from the final output.
                     if "**" in final_response:
                         clean_output = final_response.split("**", 1)[1]
-                        clean_output = "**" + clean_output  # Re-add the header
+                        clean_output = "**" + clean_output  # Re-add the header for display
                     else:
                         clean_output = final_response  # Fallback to the full response if no header is found
 
-                    # Display the cleaned content
                     st.text_area("Generated Content", value=clean_output.strip(), height=400)
 
             except Exception as e:
