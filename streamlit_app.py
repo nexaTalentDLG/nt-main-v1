@@ -22,7 +22,7 @@ openai.api_key = api_key
 ###############################################################################
 
 # Google Apps Script Webhook URL
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyOQgEFdFn1zB6te0ho-bWE6NSEpfoyfjAfIPufF1RAWsWmSqXEeAGeL3osEJpM1Yqz/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzmVckijv-VwxEDA4aV3Kq9szZOp3KOB915IqDidAWxnFBpYPpT5Ou6cKWY2RvDCxFn/exec"
 
 def log_to_google_sheets(tool_selection, user_input, generated_output):
     """
