@@ -60,22 +60,17 @@ def log_consent(email):
         "timestamp": timestamp,
         "email": email,
         "consent": "I agree",
-        "ip_address": ""  # Added to match Apps Script expectations
+        "ip_address": ""
     }
     try:
-        st.write("Attempting to log consent...")  # Debug output
         response = requests.post(CONSENT_TRACKER_URL, json=data)
-        st.write(f"Response status code: {response.status_code}")  # Debug output
-        st.write(f"Response content: {response.text}")  # Debug output
-        
         if response.status_code == 200:
-            st.success("Consent logged successfully!")
             return response.text
         else:
-            st.error(f"Failed to log consent. Status code: {response.status_code}")
+            print(f"Failed to log consent. Status code: {response.status_code}")  # Log to console
             return None
     except Exception as e:
-        st.error(f"Consent logging error: {str(e)}")
+        print(f"Consent logging error: {str(e)}")  # Log to console
         return None
 
 # Ensure consent is tracked in session state.
@@ -176,9 +171,9 @@ By clicking "I understand and accept", you acknowledge that:
         
         # Button is disabled until an email is entered.
         if st.button("I understand and accept", disabled=(not email.strip())):
-            st.session_state.consent = True
-            log_consent(email)
-            consent_container.empty()
+            if log_consent(email) is not None:
+                st.session_state.consent = True
+                consent_container.empty()
     
     if not st.session_state.consent:
         st.stop()
@@ -240,19 +235,23 @@ def evaluate_content(generated_output, rubric_context):
     Sends the generated output and rubric context to the evaluator model (Gemini)
     and returns the evaluation feedback and score.
     """
-    # Try to get API key from multiple sources
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # Try environment variable
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     
     if not GOOGLE_API_KEY and hasattr(st.secrets, "GOOGLE_API_KEY"):
-        GOOGLE_API_KEY = st.secrets.GOOGLE_API_KEY  # Try Streamlit secrets
+        GOOGLE_API_KEY = st.secrets.GOOGLE_API_KEY
         
     if not GOOGLE_API_KEY:
-        # Debug output to see what environment variables are available
-        st.error("Google API key not found. Available environment variables:")
-        st.write({k: v for k, v in os.environ.items() if not k.startswith('_')})
+        print("Google API key not found.")  # Log to console
         return None, ""
     
     genai.configure(api_key=GOOGLE_API_KEY)
+    
+    generation_config = {
+        "temperature": 0.7,
+        "top_p": 1,
+        "top_k": 1,
+        "max_output_tokens": 2048,
+    }
     
     evaluator_prompt = (
         "Using the following rubric, evaluate the generated content below. "
@@ -263,20 +262,34 @@ def evaluate_content(generated_output, rubric_context):
     )
     
     try:
-        # Initialize Gemini Pro model
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel(
+            model_name='gemini-2.0-flash',
+            generation_config=generation_config
+        )
         
-        # Generate response
         response = model.generate_content(evaluator_prompt)
         
+        if not response.text:
+            print("Empty response from Gemini API")  # Log to console
+            return None, ""
+            
         evaluator_text = response.text.strip()
         score_match = re.search(r"Score[:\s]*(\d)", evaluator_text)
         score = int(score_match.group(1)) if score_match else None
         
+        if score is None:
+            print("Could not extract score from evaluator response")  # Log to console
+            
         return score, evaluator_text
         
     except Exception as e:
-        st.error(f"Evaluator error: {e}")
+        print(f"Evaluator error: {str(e)}")  # Log to console
+        print("Full error details:", e)  # Log to console
+        try:
+            available_models = [m.name for m in genai.list_models()]
+            print("Available models:", available_models)  # Log to console
+        except Exception as list_error:
+            print(f"Error listing models: {str(list_error)}")  # Log to console
         return None, ""
 
 ###############################################################################
@@ -630,22 +643,24 @@ if st.button("Generate"):
             except Exception as e:
                 st.error(f"An error occurred: {e}")
 
-def test_consent_webhook():
-    """Test function to verify webhook connectivity"""
-    test_data = {
-        "timestamp": get_current_timestamp(),
-        "email": "test@example.com",
-        "consent": "TEST",
-        "ip_address": ""
-    }
+def verify_model_availability():
+    """Verify that the required model is available"""
     try:
-        st.write("Testing consent webhook...")
-        response = requests.post(CONSENT_TRACKER_URL, json=test_data)
-        st.write(f"Status Code: {response.status_code}")
-        st.write(f"Response: {response.text}")
+        available_models = [m.name for m in genai.list_models()]
+        required_model = 'gemini-2.0-flash'
+        
+        if required_model not in available_models:
+            # Log error to console instead of showing to user
+            print(f"Required model '{required_model}' is not available. Using default model 'gemini-pro' instead.")
+            return 'gemini-pro'
+        return required_model
     except Exception as e:
-        st.error(f"Test failed: {str(e)}")
+        print(f"Error verifying model availability: {str(e)}")  # Log to console
+        return 'gemini-pro'
 
-# Add this near the top of your UI, after the title
-if st.button("Test Consent Webhook"):
-    test_consent_webhook()
+# Remove the test button from UI
+# if st.button("Test Consent Webhook"):
+#     test_consent_webhook()
+
+# Remove model verification from UI display
+model_to_use = verify_model_availability()
