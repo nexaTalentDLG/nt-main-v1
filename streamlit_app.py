@@ -546,7 +546,7 @@ if st.button("Generate"):
                 .replace("[confidentiality_message]", "It looks like you may be trying to complete a task that this tool hasn't yet been fine-tuned to handle. At NexaTalent, we are committed to delivering tools that meet or exceed our rigorous quality standards. This commitment drives our mission to improve the quality of organizations through technology and data-driven insights.\n\nIf you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com.")
                 + "\n\n"
                 "# ADDITIONAL NOTE #\n"
-                "Only provide the final output per the #RESPONSE# section. Do not include any chain-of-thought, steps, or internal reasoning."
+                "Only provide the final output per the #RESPONSE# section. Do not include any chain-of-thought, steps, or internal reasoning. Do not include your own evaluations of your work in the final output. Do not indicate that the final version you generate has been revised or adapated based on feedback"
             )
             
             try:
@@ -623,22 +623,8 @@ if st.button("Generate"):
                         "If you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com."
                     )
                 else:
-                    # Clean the output by removing evaluation content
-                    clean_output = refined_output
-                    
-                    # Remove evaluation summary section
-                    if "### Evaluation Summary" in clean_output:
-                        clean_output = clean_output.split("### Evaluation Summary")[0]
-                    
-                    # Remove any trailing evaluation content
-                    if "---" in clean_output:
-                        clean_output = clean_output.split("---")[0]
-                    
-                    # Remove any trailing whitespace and newlines
-                    clean_output = clean_output.strip()
-                    
-                    # Display the cleaned output
-                    st.text_area("Generated Content", value=clean_output, height=400)
+                    # Display the output directly
+                    st.text_area("Generated Content", value=refined_output.strip(), height=400)
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
