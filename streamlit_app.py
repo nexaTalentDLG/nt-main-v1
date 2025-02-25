@@ -28,7 +28,7 @@ def get_current_timestamp():
 ###############################################################################
 # Consent Tracker Setup (Updated webhook)
 ###############################################################################
-CONSENT_TRACKER_URL = "https://script.google.com/macros/s/AKfycbwf_rc_b-XfJJbCoxlqEs0gtOtt0iGSeYs8Q2JkqmoEXXnSW5i8asQZnJtmJRsnYv4OOQ/exec"
+CONSENT_TRACKER_URL = "https://script.google.com/macros/s/AKfycbyWRsvUxUNvj90eKtH_-XAfNwn9l4Xc_koh2wkccPct_0bpxA4T7DQNRu3VdAPyC_cGNw/exec"
 
 def log_consent(email):
     """
@@ -39,13 +39,18 @@ def log_consent(email):
     data = {
         "timestamp": timestamp,
         "email": email,
-        "consent": "I agree"
+        "consent": "I agree",
+        "ip_address": ""  # Added to match the Apps Script expectations
     }
     try:
         response = requests.post(CONSENT_TRACKER_URL, json=data)
+        if response.status_code != 200:
+            st.error(f"Consent logging failed with status code: {response.status_code}")
+            return None
+        st.success("Consent logged successfully!")
         return response.text
     except Exception as e:
-        st.error(f"Consent logging error: {e}")
+        st.error(f"Consent logging error: {str(e)}")
         return None
 
 # Ensure consent is tracked in session state.
@@ -64,10 +69,10 @@ if not st.session_state.consent:
         user_agreement_text = f"""EARLY QUALITATIVE TESTING AGREEMENT & MUTUAL NON-DISCLOSURE AGREEMENT
 Effective Date: {today}
 Parties: This agreement is between NexaTalent ("Provider") and the individual accepting these terms ("Tester").
-This Agreement sets forth the terms under which the Tester is granted access to NexaTalent’s pre-alpha product for qualitative testing while ensuring confidentiality and proper handling of proprietary information.
+This Agreement sets forth the terms under which the Tester is granted access to NexaTalent's pre-alpha product for qualitative testing while ensuring confidentiality and proper handling of proprietary information.
 
 SECTION 1: EARLY QUALITATIVE TESTING AGREEMENT
-This section governs the Tester’s participation in NexaTalent’s pre-alpha testing phase, where feedback will be collected to refine product usability, functionality, and experience.
+This section governs the Tester's participation in NexaTalent's pre-alpha testing phase, where feedback will be collected to refine product usability, functionality, and experience.
 1. Confidentiality
    The Tester acknowledges that all materials, discussions, prototypes, designs, test data, feedback, documentation, and any related information provided before, during, or after the testing phase are confidential and proprietary to NexaTalent.
    Tester agrees not to share, copy, disclose, or distribute any information related to the Testing Session, including but not limited to screenshots, descriptions, recordings, discussions, or findings.
@@ -75,7 +80,7 @@ This section governs the Tester’s participation in NexaTalent’s pre-alpha te
    These confidentiality obligations remain in effect for three (3) years from the date of acceptance or until NexaTalent publicly releases the Product, whichever is later.
    Any breach of confidentiality may result in immediate termination of this Agreement and legal action as permitted by law.
 2. Scope of Testing
-   The Tester agrees to evaluate the Product using NexaTalent’s designated platforms (e.g., Streamlit app, Google Sheets, email feedback forms). Testing includes:
+   The Tester agrees to evaluate the Product using NexaTalent's designated platforms (e.g., Streamlit app, Google Sheets, email feedback forms). Testing includes:
    - Completing assigned tasks as instructed.
    - Logging and documenting identified issues.
    - Providing structured feedback via feedback forms, discussions, or debrief sessions.
@@ -88,7 +93,7 @@ This section governs the Tester’s participation in NexaTalent’s pre-alpha te
    The Tester acknowledges that participation is voluntary and that they will not receive financial compensation for any activities related to the Testing Session, including past, current, or future testing engagements.
 5. Limitations of Liability
    The Product is provided "as is" and may contain bugs, incomplete features, or unexpected performance issues.
-   NexaTalent is not responsible for any damage to the Tester’s device, loss of data, or other issues resulting from participation in testing.
+   NexaTalent is not responsible for any damage to the Tester's device, loss of data, or other issues resulting from participation in testing.
    NexaTalent, its employees, officers, and affiliates are not liable for any damages resulting from unforeseen data breaches or technical failures.
 6. Termination
    Either party may terminate this Agreement with written notice.
@@ -104,25 +109,25 @@ This section ensures that confidential and proprietary information shared betwee
    "Confidential Information" includes, but is not limited to:
    - Business, financial, customer, product, and service details.
    - Intellectual property, trade secrets, inventions, and methodologies.
-   - Any documentation, schematics, prototypes, test results, or discussions related to NexaTalent’s operations or products.
+   - Any documentation, schematics, prototypes, test results, or discussions related to NexaTalent's operations or products.
    - Any third-party confidential information provided by NexaTalent.
 2. Exclusions from Confidential Information
    Confidential Information does not include information that:
    - Becomes publicly available without violation of this Agreement.
    - Is legally obtained from a third party without confidentiality obligations.
    - Was already known by the Tester prior to disclosure, as evidenced by written records.
-   - Is independently developed by the Tester without using NexaTalent’s confidential information.
+   - Is independently developed by the Tester without using NexaTalent's confidential information.
 3. Tester Obligations
    The Tester agrees to:
    - Maintain strict confidentiality regarding all disclosed information.
    - Use the information solely for testing purposes and not for any personal, competitive, or commercial advantage.
-   - Not disclose, share, or distribute any confidential materials to third parties without NexaTalent’s prior written consent.
+   - Not disclose, share, or distribute any confidential materials to third parties without NexaTalent's prior written consent.
 4. Required Disclosure by Law
    If legally compelled to disclose confidential information, the Tester must:
    - Provide prompt written notice to NexaTalent.
    - Limit disclosure to only the portion required by law.
 5. Return or Destruction of Confidential Information
-   Upon termination of this Agreement, or at NexaTalent’s request, the Tester must:
+   Upon termination of this Agreement, or at NexaTalent's request, the Tester must:
    - Return or permanently delete all confidential information in their possession.
    - Provide written certification confirming destruction of all copies.
 6. Term & Survival
@@ -146,9 +151,11 @@ By clicking "I understand and accept", you acknowledge that:
         
         # Button is disabled until an email is entered.
         if st.button("I understand and accept", disabled=(not email.strip())):
-            st.session_state.consent = True
-            log_consent(email)
-            consent_container.empty()
+            if log_consent(email) is not None:  # Only proceed if logging was successful
+                st.session_state.consent = True
+                consent_container.empty()
+            else:
+                st.error("Failed to log consent. Please try again or contact support.")
     
     if not st.session_state.consent:
         st.stop()
@@ -277,7 +284,7 @@ Hiring team members and hiring managers.
 
 TASK_FORMAT_DEFINITIONS = {
     "Write a job description": """
-Output should contain the following headings: “About Us, Job Summary, Key Responsibilities, Requirements, Qualifications, Key Skills, Benefits, Salary, and Work Environment”. 
+Output should contain the following headings: "About Us, Job Summary, Key Responsibilities, Requirements, Qualifications, Key Skills, Benefits, Salary, and Work Environment". 
 Each section should build upon the previous ones to create a cohesive narrative. Use bullet points for Responsibilities, Requirements, and Benefits sections. 
 Keep the About Us section under 150 words. Ensure all requirements listed are truly mandatory, including location and citizenship requirements when applicable. 
 Always verify salary ranges comply with local pay transparency laws and reference specific technologies/tools rather than general terms whenever possible.
@@ -312,7 +319,7 @@ EXAMPLE:
 >>Model Judgement: The tasks of the user and the model are highly similar, as both involve the creation of interview questions specifically designed for the Nurse position. The focus is on assessing the candidates' abilities and experiences related to the provided job details. Thus, I would score this a 5.
  
 **Experience with Club Channel Sales**
-Main Question: Can you describe a successful initiative you’ve led in the Club Channel space that delivered significant business growth? What was your role, and how did you measure success?
+Main Question: Can you describe a successful initiative you've led in the Club Channel space that delivered significant business growth? What was your role, and how did you measure success?
 - Follow-up 1: How did you address challenges during this initiative, especially regarding broker partner management?
 - Follow-up 2: What strategies did you use to ensure alignment across cross-functional teams?
 """,
@@ -411,7 +418,7 @@ if st.button("Generate"):
                 .replace("[TASK_OVERVIEW]", chosen_task_overview)
                 .replace("[TASK_LOOK_FORS]", chosen_task_look_fors)
                 .replace("[task_format]", chosen_task_format.strip())
-                .replace("[confidentiality_message]", "It looks like you may be trying to complete a task that this tool hasn’t yet been fine-tuned to handle. At NexaTalent, we are committed to delivering tools that meet or exceed our rigorous quality standards. This commitment drives our mission to improve the quality of organizations through technology and data-driven insights.\n\nIf you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com.")
+                .replace("[confidentiality_message]", "It looks like you may be trying to complete a task that this tool hasn't yet been fine-tuned to handle. At NexaTalent, we are committed to delivering tools that meet or exceed our rigorous quality standards. This commitment drives our mission to improve the quality of organizations through technology and data-driven insights.\n\nIf you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com.")
                 + "\n\n"
                 "# ADDITIONAL NOTE #\n"
                 "Only provide the final output per the #RESPONSE# section. Do not include any chain-of-thought, steps, or internal reasoning."
@@ -449,7 +456,7 @@ if st.button("Generate"):
                 
                 if model_judgement_value is not None and model_judgement_value <= 2:
                     st.warning(
-                        "It looks like you may be trying to complete a task that this tool hasn’t yet been fine-tuned to handle. "
+                        "It looks like you may be trying to complete a task that this tool hasn't yet been fine-tuned to handle. "
                         "At NexaTalent, we are committed to delivering tools that meet or exceed our rigorous quality standards. "
                         "This commitment drives our mission to improve the quality of organizations through technology and data-driven insights.\n\n"
                         "If you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com."
@@ -465,3 +472,22 @@ if st.button("Generate"):
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
+
+def test_consent_webhook():
+    """Test function to verify webhook connectivity"""
+    test_data = {
+        "timestamp": get_current_timestamp(),
+        "email": "test@example.com",
+        "consent": "TEST",
+        "ip_address": ""
+    }
+    try:
+        response = requests.post(CONSENT_TRACKER_URL, json=test_data)
+        st.write(f"Status Code: {response.status_code}")
+        st.write(f"Response: {response.text}")
+    except Exception as e:
+        st.error(f"Test failed: {str(e)}")
+
+# Add this somewhere in your UI for testing:
+if st.button("Test Consent Webhook"):
+    test_consent_webhook()
