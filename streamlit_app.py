@@ -580,7 +580,9 @@ if st.button("Generate"):
                 refinement_instructions = (
                     f"The following content was generated:\n{initial_output}\n\n"
                     f"The evaluator provided the following feedback:\n{evaluator_feedback}\n\n"
-                    "Please refine the content based on the feedback."
+                    f"Please refine the content based on the feedback and ensure it follows this format:\n\n"
+                    f"{TASK_FORMAT_DEFINITIONS[task]}\n\n"
+                    "Important: Do not include any evaluation criteria, refinement notes, or improvement suggestions in the final output."
                 )
                 refined_response = openai.chat.completions.create(
                     model="gpt-4o-mini",
