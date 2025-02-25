@@ -8,7 +8,13 @@ from dotenv import load_dotenv
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo  # For timezone support
-import google.generativeai as genai  # Add this import at the top with other imports
+
+# Try importing google.generativeai with error handling
+try:
+    import google.generativeai as genai
+except ImportError:
+    st.error("Required package 'google-generativeai' is not installed. Please install it using: pip install google-generativeai")
+    st.stop()
 
 # Load environment variables
 load_dotenv()
@@ -53,13 +59,23 @@ def log_consent(email):
     data = {
         "timestamp": timestamp,
         "email": email,
-        "consent": "I agree"
+        "consent": "I agree",
+        "ip_address": ""  # Added to match Apps Script expectations
     }
     try:
+        st.write("Attempting to log consent...")  # Debug output
         response = requests.post(CONSENT_TRACKER_URL, json=data)
-        return response.text
+        st.write(f"Response status code: {response.status_code}")  # Debug output
+        st.write(f"Response content: {response.text}")  # Debug output
+        
+        if response.status_code == 200:
+            st.success("Consent logged successfully!")
+            return response.text
+        else:
+            st.error(f"Failed to log consent. Status code: {response.status_code}")
+            return None
     except Exception as e:
-        st.error(f"Consent logging error: {e}")
+        st.error(f"Consent logging error: {str(e)}")
         return None
 
 # Ensure consent is tracked in session state.
@@ -613,3 +629,23 @@ if st.button("Generate"):
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
+
+def test_consent_webhook():
+    """Test function to verify webhook connectivity"""
+    test_data = {
+        "timestamp": get_current_timestamp(),
+        "email": "test@example.com",
+        "consent": "TEST",
+        "ip_address": ""
+    }
+    try:
+        st.write("Testing consent webhook...")
+        response = requests.post(CONSENT_TRACKER_URL, json=test_data)
+        st.write(f"Status Code: {response.status_code}")
+        st.write(f"Response: {response.text}")
+    except Exception as e:
+        st.error(f"Test failed: {str(e)}")
+
+# Add this near the top of your UI, after the title
+if st.button("Test Consent Webhook"):
+    test_consent_webhook()
