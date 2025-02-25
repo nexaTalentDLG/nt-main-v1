@@ -156,7 +156,7 @@ By clicking "I understand and accept", you acknowledge that:
 ###############################################################################
 # Updated Logging Function with New WebApp URL (Main Logger)
 ###############################################################################
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyCimMUfjx-unx02x0wPgH-dOAYxDM6CmQD6EPkigQHwv1eE2O4VnuHIfv9krUC0Pu2/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwvAnTbuQSB33wlwCmHJkqAC_lVga7teajepg8IaZxEDuLtQHg8Be9R-I8-ZrFEho-r/exec"
 
 def log_to_google_sheets(tool_selection, user_input, generated_output, feedback=None, 
                            prompt_tokens=None, completion_tokens=None, total_tokens=None):
