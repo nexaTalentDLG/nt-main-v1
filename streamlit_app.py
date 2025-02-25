@@ -8,9 +8,23 @@ from dotenv import load_dotenv
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo  # For timezone support
+import google.generativeai as genai  # Add this import at the top with other imports
 
 # Load environment variables
 load_dotenv()
+
+# Debug environment variables loading
+google_api_key = os.getenv("GOOGLE_API_KEY")
+if not google_api_key:
+    st.write("Loading from .env failed. Checking Streamlit secrets...")
+    if hasattr(st.secrets, "GOOGLE_API_KEY"):
+        google_api_key = st.secrets.GOOGLE_API_KEY
+        os.environ["GOOGLE_API_KEY"] = google_api_key  # Set it in environment variables
+
+if not google_api_key:
+    st.error("Google API key not found in either .env or Streamlit secrets.")
+    st.stop()
+
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     st.error("API key not found. Please check your .env file.")
@@ -39,18 +53,13 @@ def log_consent(email):
     data = {
         "timestamp": timestamp,
         "email": email,
-        "consent": "I agree",
-        "ip_address": ""  # Added to match the Apps Script expectations
+        "consent": "I agree"
     }
     try:
         response = requests.post(CONSENT_TRACKER_URL, json=data)
-        if response.status_code != 200:
-            st.error(f"Consent logging failed with status code: {response.status_code}")
-            return None
-        st.success("Consent logged successfully!")
         return response.text
     except Exception as e:
-        st.error(f"Consent logging error: {str(e)}")
+        st.error(f"Consent logging error: {e}")
         return None
 
 # Ensure consent is tracked in session state.
@@ -151,11 +160,9 @@ By clicking "I understand and accept", you acknowledge that:
         
         # Button is disabled until an email is entered.
         if st.button("I understand and accept", disabled=(not email.strip())):
-            if log_consent(email) is not None:  # Only proceed if logging was successful
-                st.session_state.consent = True
-                consent_container.empty()
-            else:
-                st.error("Failed to log consent. Please try again or contact support.")
+            st.session_state.consent = True
+            log_consent(email)
+            consent_container.empty()
     
     if not st.session_state.consent:
         st.stop()
@@ -164,29 +171,119 @@ By clicking "I understand and accept", you acknowledge that:
 # Updated Logging Function with New WebApp URL (Main Logger)
 ###############################################################################
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxOcjcozSKkD-39s1LGd8U2iKsDUEQNyl1wg7GNWjdqsSBY3Y4NTIv7q-Gfrqw7WWPd/exec"
-def log_to_google_sheets(tool_selection, user_input, generated_output, feedback=None, 
-                           prompt_tokens=None, completion_tokens=None, total_tokens=None):
+
+def log_to_google_sheets(
+    tool_selection,
+    user_input,
+    initial_output,
+    evaluator_feedback,
+    evaluator_score,
+    refined_output,
+    feedback=None,
+    prompt_tokens=None,
+    completion_tokens=None,
+    total_tokens=None,
+    user_summary=None,
+    model_comparison=None,
+    model_judgement=None
+):
     """
-    Sends log data (timestamp, tool selection, user input, generated output, feedback,
-    and token usage: prompt_tokens, completion_tokens, total_tokens)
-    to the specified Google Sheet via the provided webhook.
+    Sends log data including initial output, evaluator feedback, evaluator score,
+    refined output, and additional evaluation details (user_summary, model_comparison, model_judgement),
+    along with the original fields, to the specified Google Sheet via the provided webhook.
     """
     timestamp = get_current_timestamp()
     data = {
         "timestamp": timestamp,
         "tool_selection": tool_selection,
         "user_input": user_input,
-        "generated_output": generated_output,
+        "initial_output": initial_output,
+        "evaluator_feedback": evaluator_feedback,
+        "evaluator_score": evaluator_score,
+        "refined_output": refined_output,
         "feedback": feedback if feedback is not None else "",
         "prompt_tokens": prompt_tokens if prompt_tokens is not None else "",
         "completion_tokens": completion_tokens if completion_tokens is not None else "",
-        "total_tokens": total_tokens if total_tokens is not None else ""
+        "total_tokens": total_tokens if total_tokens is not None else "",
+        "user_summary": user_summary if user_summary is not None else "",
+        "model_comparison": model_comparison if model_comparison is not None else "",
+        "model_judgement": model_judgement if model_judgement is not None else ""
     }
     try:
         response = requests.post(WEBHOOK_URL, json=data)
         return response.text
     except Exception as e:
         return f"Logging error: {e}"
+
+###############################################################################
+# Evaluator Function
+###############################################################################
+
+def evaluate_content(generated_output, rubric_context):
+    """
+    Sends the generated output and rubric context to the evaluator model (Gemini)
+    and returns the evaluation feedback and score.
+    """
+    # Try to get API key from multiple sources
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # Try environment variable
+    
+    if not GOOGLE_API_KEY and hasattr(st.secrets, "GOOGLE_API_KEY"):
+        GOOGLE_API_KEY = st.secrets.GOOGLE_API_KEY  # Try Streamlit secrets
+        
+    if not GOOGLE_API_KEY:
+        # Debug output to see what environment variables are available
+        st.error("Google API key not found. Available environment variables:")
+        st.write({k: v for k, v in os.environ.items() if not k.startswith('_')})
+        return None, ""
+    
+    genai.configure(api_key=GOOGLE_API_KEY)
+    
+    evaluator_prompt = (
+        "Using the following rubric, evaluate the generated content below. "
+        "Return a numerical score (0-5) and provide detailed feedback for improvements.\n\n"
+        f"Rubric Context:\n{rubric_context}\n\n"
+        f"Generated Content:\n{generated_output}\n\n"
+        "Evaluator Response (Score and Feedback):"
+    )
+    
+    try:
+        # Initialize Gemini Pro model
+        model = genai.GenerativeModel('gemini-pro')
+        
+        # Generate response
+        response = model.generate_content(evaluator_prompt)
+        
+        evaluator_text = response.text.strip()
+        score_match = re.search(r"Score[:\s]*(\d)", evaluator_text)
+        score = int(score_match.group(1)) if score_match else None
+        
+        return score, evaluator_text
+        
+    except Exception as e:
+        st.error(f"Evaluator error: {e}")
+        return None, ""
+
+###############################################################################
+# Extract Model 
+###############################################################################
+
+def extract_evaluation_parts(text):
+    """
+    Extracts user_summary, model_comparison, and model_judgement from the given text.
+    Assumes that the text contains lines like:
+      >>User Summary: <content>
+      >>Model Comparison: <content>
+      >>Model Judgement: <content>
+    """
+    user_summary_match = re.search(r">>User Summary:\s*(.*)", text)
+    model_comparison_match = re.search(r">>Model Comparison:\s*(.*)", text)
+    model_judgement_match = re.search(r">>Model Judgement:\s*(.*)", text)
+    
+    user_summary = user_summary_match.group(1).strip() if user_summary_match else ""
+    model_comparison = model_comparison_match.group(1).strip() if model_comparison_match else ""
+    model_judgement = model_judgement_match.group(1).strip() if model_judgement_match else ""
+    
+    return user_summary, model_comparison, model_judgement
 
 ###############################################################################
 # Mappings and Helper Texts
@@ -275,10 +372,9 @@ Maintain an informative and professional tone throughout your output.
 Hiring team members and hiring managers.
 
 # RESPONSE #
->>{user_summary}
->>{model_summary}
->>{model_comparison}
->>{model_judgement}
+>>User Summary: <Insert user summary here>
+>>Model Comparison: <Insert model comparison here>
+>>Model Judgement: <Insert model judgement here>
 [task_format]
 """
 
@@ -425,6 +521,7 @@ if st.button("Generate"):
             )
             
             try:
+                # Step 1: Generate initial content.
                 response = openai.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
@@ -434,7 +531,7 @@ if st.button("Generate"):
                     temperature=0.7
                 )
                 
-                final_response = response.choices[0].message.content.strip()
+                initial_output = response.choices[0].message.content.strip()
                 
                 usage = getattr(response, "usage", None)
                 if usage is not None:
@@ -444,13 +541,48 @@ if st.button("Generate"):
                 else:
                     prompt_tokens = completion_tokens = total_tokens = ""
                 
-                log_to_google_sheets(task, user_notes, final_response,
-                                     prompt_tokens=prompt_tokens,
-                                     completion_tokens=completion_tokens,
-                                     total_tokens=total_tokens)
+                # Extract evaluation parts
+                user_summary, model_comparison, model_judgement = extract_evaluation_parts(initial_output)
                 
+                # Step 2: Evaluate the initial output using Gemini.
+                score, evaluator_feedback = evaluate_content(initial_output, rubric_context)
+                
+                # Step 3: Refine the content using evaluator feedback.
+                refinement_instructions = (
+                    f"The following content was generated:\n{initial_output}\n\n"
+                    f"The evaluator provided the following feedback:\n{evaluator_feedback}\n\n"
+                    "Please refine the content based on the feedback."
+                )
+                refined_response = openai.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": final_instructions},
+                        {"role": "user", "content": refinement_instructions}
+                    ],
+                    temperature=0.7
+                )
+                refined_output = refined_response.choices[0].message.content.strip()
+                
+                # Move the logging here, after all data is available
+                log_to_google_sheets(
+                    tool_selection=task,
+                    user_input=user_notes,
+                    initial_output=initial_output,
+                    evaluator_feedback=evaluator_feedback,
+                    evaluator_score=score,
+                    refined_output=refined_output,
+                    feedback=f"Refinement based on evaluator score: {score}",
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    user_summary=user_summary,
+                    model_comparison=model_comparison,
+                    model_judgement=model_judgement
+                )
+
+                # Step 4: Check the refined output for model judgement value.
                 model_judgement_value = None
-                judgement_match = re.search(r"\{model_judgement\}[:\s]*([0-5])", final_response)
+                judgement_match = re.search(r"\{model_judgement\}[:\s]*([0-5])", refined_output)
                 if judgement_match:
                     model_judgement_value = int(judgement_match.group(1))
                 
@@ -462,32 +594,22 @@ if st.button("Generate"):
                         "If you have questions about how our app works or the types of tasks it specializes in, please feel free to reach out to us at info@nexatalent.com."
                     )
                 else:
-                    if "**" in final_response:
-                        clean_output = final_response.split("**", 1)[1]
-                        clean_output = "**" + clean_output
-                    else:
-                        clean_output = final_response
+                    # Clean the output by removing evaluation content
+                    clean_output = refined_output
                     
-                    st.text_area("Generated Content", value=clean_output.strip(), height=400)
+                    # Remove evaluation summary section
+                    if "### Evaluation Summary" in clean_output:
+                        clean_output = clean_output.split("### Evaluation Summary")[0]
+                    
+                    # Remove any trailing evaluation content
+                    if "---" in clean_output:
+                        clean_output = clean_output.split("---")[0]
+                    
+                    # Remove any trailing whitespace and newlines
+                    clean_output = clean_output.strip()
+                    
+                    # Display the cleaned output
+                    st.text_area("Generated Content", value=clean_output, height=400)
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-
-def test_consent_webhook():
-    """Test function to verify webhook connectivity"""
-    test_data = {
-        "timestamp": get_current_timestamp(),
-        "email": "test@example.com",
-        "consent": "TEST",
-        "ip_address": ""
-    }
-    try:
-        response = requests.post(CONSENT_TRACKER_URL, json=test_data)
-        st.write(f"Status Code: {response.status_code}")
-        st.write(f"Response: {response.text}")
-    except Exception as e:
-        st.error(f"Test failed: {str(e)}")
-
-# Add this somewhere in your UI for testing:
-if st.button("Test Consent Webhook"):
-    test_consent_webhook()
