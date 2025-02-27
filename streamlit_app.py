@@ -9,34 +9,43 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo  # For timezone support
 
-# Try importing google.generativeai with error handling
-try:
-    import google.generativeai as genai
-except ImportError:
-    st.error("Required package 'google-generativeai' is not installed. Please install it using: pip install google-generativeai")
-    st.stop()
+# Add this after imports but before any other Streamlit commands
+st.set_page_config(
+    page_title="NexaTalent AI",
+    page_icon="reference_materials/NT Icon.png",
+    layout="centered"
+)
+
+# Comment out Google AI imports since we're not using them currently
+# try:
+#     import google.generativeai as genai
+# except ImportError:
+#     st.error("Required package 'google-generativeai' is not installed. Please install it using: pip install google-generativeai")
+#     st.stop()
 
 # Load environment variables
 load_dotenv()
 
-# Debug environment variables loading
-google_api_key = os.getenv("GOOGLE_API_KEY")
-if not google_api_key:
-    st.write("Loading from .env failed. Checking Streamlit secrets...")
-    if hasattr(st.secrets, "GOOGLE_API_KEY"):
-        google_api_key = st.secrets.GOOGLE_API_KEY
-        os.environ["GOOGLE_API_KEY"] = google_api_key  # Set it in environment variables
+# Remove Google API key loading since we're not using it
+# google_api_key = os.getenv("GOOGLE_API_KEY")
+# if not google_api_key:
+#     st.write("Loading from .env failed. Checking Streamlit secrets...")
+#     if hasattr(st.secrets, "GOOGLE_API_KEY"):
+#         google_api_key = st.secrets.GOOGLE_API_KEY
+#         os.environ["GOOGLE_API_KEY"] = google_api_key
 
-if not google_api_key:
-    st.error("Google API key not found in either .env or Streamlit secrets.")
-    st.stop()
+# if not google_api_key:
+#     st.error("Google API key not found in either .env or Streamlit secrets.")
+#     st.stop()
 
+# Load OpenAI API key
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     st.error("API key not found. Please check your .env file.")
     st.stop()
 
 openai.api_key = api_key
+
 
 ###############################################################################
 # Helper function for timestamp in PST with 12-hour format
@@ -232,49 +241,40 @@ def log_to_google_sheets(
 
 def evaluate_content(generated_output, rubric_context):
     """
-    Sends the generated output and rubric context to the evaluator model (Gemini)
+    Sends the generated output and rubric context to the evaluator model (OpenAI)
     and returns the evaluation feedback and score.
     """
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    
-    if not GOOGLE_API_KEY and hasattr(st.secrets, "GOOGLE_API_KEY"):
-        GOOGLE_API_KEY = st.secrets.GOOGLE_API_KEY
-        
-    if not GOOGLE_API_KEY:
-        print("Google API key not found.")  # Log to console
-        return None, ""
-    
-    genai.configure(api_key=GOOGLE_API_KEY)
-    
-    generation_config = {
-        "temperature": 0.7,
-        "top_p": 1,
-        "top_k": 1,
-        "max_output_tokens": 2048,
-    }
+    # Comment out Google AI configuration for now
+    # GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    # if not GOOGLE_API_KEY and hasattr(st.secrets, "GOOGLE_API_KEY"):
+    #     GOOGLE_API_KEY = st.secrets.GOOGLE_API_KEY
+    # if not GOOGLE_API_KEY:
+    #     print("Google API key not found.")  # Log to console
+    #     return None, ""
+    # genai.configure(api_key=GOOGLE_API_KEY)
     
     evaluator_prompt = (
-        "Using the following rubric, evaluate the generated content below. "
+        "You are an expert evaluator. Using the following rubric, evaluate the generated content below. "
         "Return a numerical score (0-5) and provide detailed feedback for improvements.\n\n"
         f"Rubric Context:\n{rubric_context}\n\n"
         f"Generated Content:\n{generated_output}\n\n"
-        "Evaluator Response (Score and Feedback):"
+        "Important: Start your response with 'Score: X' where X is your numerical score, "
+        "then provide your detailed feedback."
     )
     
     try:
-        model = genai.GenerativeModel(
-            model_name='gemini-2.0-flash',
-            generation_config=generation_config
+        # Use OpenAI instead of Gemini
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert evaluator focused on providing clear, actionable feedback."},
+                {"role": "user", "content": evaluator_prompt}
+            ],
+            temperature=0.7
         )
         
-        response = model.generate_content(evaluator_prompt)
-        
-        if not response.text:
-            print("Empty response from Gemini API")  # Log to console
-            return None, ""
-            
-        evaluator_text = response.text.strip()
-        score_match = re.search(r"Score[:\s]*(\d)", evaluator_text)
+        evaluator_text = response.choices[0].message.content.strip()
+        score_match = re.search(r"Score:\s*(\d)", evaluator_text)
         score = int(score_match.group(1)) if score_match else None
         
         if score is None:
@@ -284,13 +284,25 @@ def evaluate_content(generated_output, rubric_context):
         
     except Exception as e:
         print(f"Evaluator error: {str(e)}")  # Log to console
-        print("Full error details:", e)  # Log to console
-        try:
-            available_models = [m.name for m in genai.list_models()]
-            print("Available models:", available_models)  # Log to console
-        except Exception as list_error:
-            print(f"Error listing models: {str(list_error)}")  # Log to console
         return None, ""
+
+    # Keep Google AI code commented out for future use
+    # try:
+    #     model = genai.GenerativeModel(
+    #         model_name='gemini-2.0-flash',
+    #         generation_config=generation_config
+    #     )
+    #     response = model.generate_content(evaluator_prompt)
+    #     if not response.text:
+    #         print("Empty response from Gemini API")
+    #         return None, ""
+    #     evaluator_text = response.text.strip()
+    #     score_match = re.search(r"Score[:\s]*(\d)", evaluator_text)
+    #     score = int(score_match.group(1)) if score_match else None
+    #     return score, evaluator_text
+    # except Exception as e:
+    #     print(f"Evaluator error: {str(e)}")
+    #     return None, ""
 
 ###############################################################################
 # Extract Model 
@@ -484,17 +496,100 @@ Ensure that your evaluation is strictly aligned with the quality standards outli
 }
 
 ###############################################################################
+# Expandable Instructions
+###############################################################################
+
+TASK_INSTRUCTIONS = {
+    "Write a job description": """
+We have found that our tools generate the best content when they know more about the specifics you're looking for. Consider using the prompt template below to guide you in creating your materials.
+
+**Role Basics**
+- Title: [job title and level (e.g., Senior Software Engineer)]
+- Company Information: [Company name and description]
+- Location: [work location, including remote options]
+
+**Key Information**
+- Primary Purpose: [brief description of the role's main objective]
+- Must-Have Requirements: [2-3 critical qualifications or skills]
+    """,
+    
+    "Build Interview Questions": """
+We have found that our tools generate the best content when they know more about the specifics you're looking for. Consider using the prompt template below to guide you in creating your materials.
+
+**Role Context**
+- Position: [job title and level]
+- Key Skills: [2-3 most important skills to assess]
+- Experience Level: [entry, mid, senior, etc.]
+
+*>>NexaTip - You can input a job description for a more complete picture of this information*
+
+**Interview Focus**
+- Primary Competencies: [key competencies you want to evaluate]
+- Specific Scenarios: [any particular situations you want to explore]
+    """,
+    
+    "Create response guides": """
+We have found that our tools generate the best content when they know more about the specifics you're looking for. Consider using the prompt template below to guide you in creating your materials.
+
+**Question Context**
+- Interview Questions: [list the questions you need guides for]
+
+**Key Criteria**
+- Success Indicators: [what would make a response strong]
+- Red Flags: [what would make a response concerning]
+
+*>>NexaTip - Adding a job description gives us a better view of the role and how to assess quality responses.*
+    """,
+    
+    "Evaluate candidate responses": """
+We have found that our tools generate the best content when they know more about the specifics you're looking for. Consider using the prompt template below to guide you in creating your materials.
+
+**Context**
+- Role: [position title and level]
+- Questions Asked: [list of questions posed]
+- Candidate Responses: [paste the responses to evaluate]
+
+**Focus Areas**
+- Key Requirements: [critical skills or competencies to assess]
+
+*>>NexaTip - Adding a job description gives us a better view of the role and how to assess quality responses.*
+    """
+}
+
+###############################################################################
 # Streamlit UI and Integration
 ###############################################################################
-st.title("NexaTalent AI")
+# Replace text title with logo
+st.image("reference_materials/Logo_Nexatalent_RGB.png", width=300)
 st.subheader("Your assistant for generating high-quality hiring content.")
 
-# Task selection and input method
+# Task selection
 task = st.selectbox("Select a task:", list(ASSISTANT_IDS.keys()))
-input_method = st.radio("How would you like to provide additional notes or information?", ("Paste text", "Upload file"))
 
-user_notes = ""
-if input_method == "Paste text":
+# Add the question text
+st.write("How would you like to provide additional notes or information?")
+
+# Create six columns but only use the first two
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+# Add buttons in the first two columns
+with col1:
+    if st.button("Paste text", type="primary"):
+        st.session_state.input_method = "paste"
+with col2:
+    if st.button("Upload file"):
+        st.session_state.input_method = "upload"
+
+# Add the instructions expander after the buttons
+with st.expander("Need help getting started?"):
+    st.markdown(TASK_INSTRUCTIONS[task])
+
+# Initialize session state for input method if not exists
+if 'input_method' not in st.session_state:
+    st.session_state.input_method = "paste"  # default to paste
+
+# Show the appropriate input method based on selection
+if st.session_state.input_method == "paste":
     user_notes = st.text_area("Enter additional notes or information:")
 else:
     uploaded_file = st.file_uploader("Upload a text file", type=["txt", "md", "rtf", "docx", "pdf"])
@@ -573,7 +668,7 @@ if st.button("Generate"):
                 # Extract evaluation parts
                 user_summary, model_comparison, model_judgement = extract_evaluation_parts(initial_output)
                 
-                # Step 2: Evaluate the initial output using Gemini.
+                # Step 2: Evaluate the initial output using OpenAI.
                 score, evaluator_feedback = evaluate_content(initial_output, rubric_context)
                 
                 # Step 3: Refine the content using evaluator feedback.
@@ -631,24 +726,21 @@ if st.button("Generate"):
             except Exception as e:
                 st.error(f"An error occurred: {e}")
 
-def verify_model_availability():
-    """Verify that the required model is available"""
-    try:
-        available_models = [m.name for m in genai.list_models()]
-        required_model = 'gemini-2.0-flash'
-        
-        if required_model not in available_models:
-            # Log error to console instead of showing to user
-            print(f"Required model '{required_model}' is not available. Using default model 'gemini-pro' instead.")
-            return 'gemini-pro'
-        return required_model
-    except Exception as e:
-        print(f"Error verifying model availability: {str(e)}")  # Log to console
-        return 'gemini-pro'
+# Comment out or remove this function since we're not using Gemini currently
+# def verify_model_availability():
+#     """Verify that the required model is available"""
+#     try:
+#         available_models = [m.name for m in genai.list_models()]
+#         required_model = 'gemini-2.0-flash'
+#         
+#         if required_model not in available_models:
+#             # Log error to console instead of showing to user
+#             print(f"Required model '{required_model}' is not available. Using default model 'gemini-pro' instead.")
+#             return 'gemini-pro'
+#         return required_model
+#     except Exception as e:
+#         print(f"Error verifying model availability: {str(e)}")  # Log to console
+#         return 'gemini-pro'
 
-# Remove the test button from UI
-# if st.button("Test Consent Webhook"):
-#     test_consent_webhook()
-
-# Remove model verification from UI display
-model_to_use = verify_model_availability()
+# Remove this line at the bottom of your file
+# model_to_use = verify_model_availability()
